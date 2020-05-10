@@ -127,7 +127,7 @@ void TestUser(void){ uint32_t id; uint32_t time;
 
 //  OS-internal OS_AddProcess function
 extern int OS_AddProcess(void(*entry)(void), void *text, void *data, 
-  unsigned long stackSize, unsigned long priority); 
+  unsigned long stackSize, unsigned long priority, uint16_t groupId);
 
 void TestProcess(void){ heap_stats_t heap1, heap2;
   // simple process management test, add process with dummy code and data segments
@@ -141,10 +141,59 @@ void TestProcess(void){ heap_stats_t heap1, heap2;
   ST7735_Message(1,2,"Heap free  =",heap1.free);
   ST7735_Message(1,3,"Heap waste =",heap1.size - heap1.used - heap1.free);
   PD1 ^= 0x02;
-  if(!OS_AddProcess(&TestUser,Heap_Calloc(128),Heap_Calloc(128),128,1)){
+  if(!OS_AddProcess(&TestUser,Heap_Calloc(128),Heap_Calloc(128),128,1, 1)){
     printf("OS_AddProcess error");
     OS_Kill();
   }
+  PD1 ^= 0x02;
+  OS_Sleep(2000); // wait long enough for user thread and hence process to exit/die
+  PD1 ^= 0x02;
+  if(Heap_Stats(&heap2)) OS_Kill();
+  PD1 ^= 0x02;
+  ST7735_Message(1,0,"Heap size  =",heap2.size); 
+  ST7735_Message(1,1,"Heap used  =",heap2.used);  
+  ST7735_Message(1,2,"Heap free  =",heap2.free);
+  ST7735_Message(1,3,"Heap waste =",heap2.size - heap2.used - heap2.free);
+  PD1 ^= 0x02;
+  if((heap1.free != heap2.free)||(heap1.used != heap2.used)){
+    printf("Process management heap error");
+    OS_Kill();
+  }
+  printf("Successful process test\n\r");
+  ST7735_DrawString(0, 0, "Process test successful", ST7735_YELLOW);
+  OS_Kill();  
+}
+
+extern int32_t* heapP;
+void TestGroupProcess(void){ heap_stats_t heap1, heap2;
+  // simple process management test, add process with dummy code and data segments
+  ST7735_DrawString(0, 0, "Process test         ", ST7735_WHITE);
+  printf("\n\rEE445M/EE380L, Lab 5 Process Test\n\r");
+  PD1 ^= 0x02;
+  if(Heap_Stats(&heap1)) OS_Kill();
+  PD1 ^= 0x02;
+  ST7735_Message(1,0,"Heap size  =",heap1.size); 
+  ST7735_Message(1,1,"Heap used  =",heap1.used);  
+  ST7735_Message(1,2,"Heap free  =",heap1.free);
+  ST7735_Message(1,3,"Heap waste =",heap1.size - heap1.used - heap1.free);
+  PD1 ^= 0x02;
+	if(!OS_AddProcess(&TestUser,Heap_Group_Calloc(128,2),Heap_Group_Calloc(128,2),128,1, 2)){
+    printf("OS_AddProcess error");
+    OS_Kill();
+  }  
+	if(!OS_AddProcess(&TestUser,Heap_Group_Calloc(128,1),Heap_Group_Calloc(128,1),128,1, 1)){
+    printf("OS_AddProcess error");
+    OS_Kill();
+  }
+//	if(!OS_AddProcess(&TestUser,Heap_Group_Calloc(128,1),Heap_Group_Calloc(128,1),128,1, 1)){
+//    printf("OS_AddProcess error");
+//    OS_Kill();
+//  }
+//	if(!OS_AddProcess(&TestUser,Heap_Group_Calloc(128,2),Heap_Group_Calloc(128,2),128,1, 2)){
+//    printf("OS_AddProcess error");
+//    OS_Kill();
+//  }
+
   PD1 ^= 0x02;
   OS_Sleep(2000); // wait long enough for user thread and hence process to exit/die
   PD1 ^= 0x02;
@@ -191,35 +240,54 @@ int Testmain0(void){   // Testmain0
 }
 
 
-extern void OS_MPUConfigure(uint32_t threadId, uint32_t stackAddr);
-extern uint32_t* heapPtr;
-void Malloc1(void) {
-	OS_MPUConfigure(0, (uint32_t) (heapPtr));
-  Heap_Calloc(128);
-	OS_Kill();
-}
-
-void Malloc2(void) {
-	*(heapPtr + 1000) = 5;
-	OS_Kill();
-}
-
 int Testmain1(void) {
-  OS_Init();           // initialize, disable interrupts
-  PortD_Init();	
+	OS_Init();           // initialize, disable interrupts
+  PortD_Init();
 
+  // attach background tasks
+  OS_AddSW1Task(&SW1Push1,2);  // PF4, SW1
+  OS_AddSW2Task(&SW2Push2,2);  // PF0, SW2
+  
   // create initial foreground threads
   NumCreated = 0;
-  NumCreated += OS_AddThread(&Malloc1,128,1); 
-	NumCreated += OS_AddThread(&Malloc2,128,2); 
-	NumCreated += OS_AddThread(&Interpreter,128,3); 	
-  NumCreated += OS_AddThread(&Idle,128,4); 
+  NumCreated += OS_AddThread(&TestGroupProcess,128,1); 
+  NumCreated += OS_AddThread(&Idle,128,3); 
  
   OS_Launch(10*TIME_1MS); // doesn't return, interrupts enabled in here
-	return 0;
+  return 0;               // this never executes
 }
  
+void dummy1(void) {
+	//for (int i = 0; i < 100000; i++) {
+    printf("Hello from dummy1 \r\n");
+	//}
+	OS_Kill();
+}
+
+void dummy2(void) {
+	//for (int i = 0; i < 100000; i++) {
+    printf("Hello from dummy2 \r\n");	
+	//}
+	OS_Kill();
+}
+
 int Testmain2(void) {
+	OS_Init();           // initialize, disable interrupts
+  PortD_Init();
+
+  // attach background tasks
+  OS_AddSW1Task(&SW1Push1,2);  // PF4, SW1
+  OS_AddSW2Task(&SW2Push2,2);  // PF0, SW2
+  
+  // create initial foreground threads
+  NumCreated = 0;
+ 
+	OS_AddProcess(&dummy1,Heap_Group_Calloc(128,1),Heap_Group_Calloc(128,1),128,1, 1);
+	OS_AddProcess(&dummy2,Heap_Group_Calloc(128,2),Heap_Group_Calloc(128,2),128,1, 2);	
+	NumCreated += OS_AddThread(&Interpreter,128,3); 
+  NumCreated += OS_AddThread(&Idle,128,4); 
+  OS_Launch(10*TIME_1MS); // doesn't return, interrupts enabled in here
+  return 0;               // this never executes	
 	return 0;
 }
 // --------------------------------------------------

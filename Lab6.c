@@ -29,15 +29,20 @@ uint32_t NumCreated;   // number of foreground threads created
 uint32_t IdleCount;    // CPU idle counter
 
 char Response[64];
-
-bool mpuEnable;
 //---------------------User debugging-----------------------
 extern int32_t MaxJitter;             // largest time jitter between interrupts in usec
+
+void SW1Push1(void);
+void SW2Push2(void);
 
 #define PD0  (*((volatile uint32_t *)0x40007004))
 #define PD1  (*((volatile uint32_t *)0x40007008))
 #define PD2  (*((volatile uint32_t *)0x40007010))
 #define PD3  (*((volatile uint32_t *)0x40007020))
+	
+#define PF1  (*((volatile uint32_t *)0x40025008))
+#define PF2  (*((volatile uint32_t *)0x40025010))
+#define PF3  (*((volatile uint32_t *)0x40025020))
 
 void PortD_Init(void){ 
   SYSCTL_RCGCGPIO_R |= 0x08;       // activate port D
@@ -70,7 +75,7 @@ void Idle(void){
     IdleCount++;
     PD0 ^= 0x01;
 		if (IdleCount == 5000000) {
-			ST7735_Message(1,1,"OS_MsTime: ", OS_MsTime());
+//			ST7735_Message(1,1,"OS_MsTime: ", OS_MsTime());
 			IdleCount = 0;
 			OS_ClearMsTime();
 		}
@@ -104,15 +109,6 @@ int realmain(void){ // realmain
 }
 
 void ButtonWork1(void){} 
-
-void SW1Push1(void){
-  if(OS_MsTime() > 20){ // debounce
-    if(OS_AddThread(&ButtonWork1,128,1)){
-      NumCreated++;
-    }
-    OS_ClearMsTime();  // at least 20ms between touches
-  }
-}
 
 // Process management test, add and reclaim dummy process
 void TestUser(void){ uint32_t id; uint32_t time;
@@ -215,6 +211,15 @@ void TestGroupProcess(void){ heap_stats_t heap1, heap2;
   OS_Kill();  
 }
 
+void SW1Push1(void){
+  if(OS_MsTime() > 20){ // debounce
+    if(OS_AddThread(&TestProcess,128,1)){
+      NumCreated++;
+    }
+    OS_ClearMsTime();  // at least 20ms between touches
+  }
+}
+
 void SW2Push2(void){
   if(OS_MsTime() > 20){ // debounce
     if(OS_AddThread(&TestProcess,128,1)){
@@ -274,7 +279,6 @@ void dummy2(void) {
 }
 
 int Testmain2(void) {
-	mpuEnable = TRUE;
 	OS_Init();           // initialize, disable interrupts
   PortD_Init();
 
@@ -291,10 +295,174 @@ int Testmain2(void) {
   NumCreated += OS_AddThread(&Idle,128,4); 
   OS_Launch(10*TIME_1MS); // doesn't return, interrupts enabled in here
   return 0;               // this never executes	
-	return 0;
 }
 // --------------------------------------------------
+extern group groupArray[];
+extern tcbType *RunPt;
+
+void PortF_trigger(void){
+	PF2 ^= 0x04;
+	OS_Sleep(10);
+	PF2 ^= 0x04;
+	OS_Kill();
+}
+
+void victimLed(void){
+	while(true){
+		OS_AddGroupThread(&PortF_trigger, 128, 2, OS_GetGroupId());
+		OS_Sleep(100);
+		if(RunPt->processPt->textPt==NULL){
+			OS_Kill();
+		}
+	}
+}
+
+void malware(void){
+	int group_id = OS_GetGroupId();
+	if(group_id==0){
+		ST7735_Message(0,0,"No group, exit.",-1);
+	}else{
+		int victim_id = group_id==1?2:1;
+		ST7735_Message(group_id-1,0,"Malware on group",group_id);
+		ST7735_Message(group_id-1,1,"Detecting group",victim_id);
+		int32_t* start = groupArray[victim_id].heapAddress;
+		if(start!=NULL){
+			int32_t size = sizeof(pcbType)/sizeof(int32_t);
+			int32_t* end = start + HEAP_SIZE/2-1;
+			int16_t flag = 0;
+			while(start<end){
+				if(*start==size){
+					flag = 1;
+					int threas = *(start+2);
+					*(start+2) = threas - 1;
+					break;
+				}
+				start = start + abs(*start) + 2;
+			}
+			if(flag){
+				ST7735_Message(group_id-1,2,"PCB found:",(int)start);
+				ST7735_Message(group_id-1,3,"Modified!",victim_id);
+			}else{
+				ST7735_Message(group_id-1,2,"PCB not found on",victim_id);
+			}
+		}else{
+			ST7735_Message(group_id-1,2,"No victim groups",-1);
+		}
+		ST7735_Message(group_id-1,4,"Exit",-1);
+	}
+	OS_Kill();
+}
+
+void SW1PushDemo1(void){
+  if(OS_MsTime() > 20){ // debounce
+    if(OS_AddGroupThread(&malware,128,1,1)){
+      NumCreated++;
+    }
+    OS_ClearMsTime();  // at least 20ms between touches
+  }
+}
+
+void SW2PushDemo1(void){
+  if(OS_MsTime() > 20){ // debounce
+    if(OS_AddGroupThread(&malware,128,1,2)){
+      NumCreated++;
+    }
+    OS_ClearMsTime();  // at least 20ms between touches
+  }
+}
+
+void demo1(void){
+	OS_Init();           // initialize, disable interrupts
+  PortD_Init();
+	PortF_Init();
+
+  // attach background tasks
+  OS_AddSW1Task(&SW1PushDemo1,2);
+	OS_AddSW2Task(&SW2PushDemo1,2);
+  
+  // create initial foreground threads
+  NumCreated = 0;
+	
+	NumCreated += OS_AddThread(&Interpreter,128,3); 
+  NumCreated += OS_AddThread(&Idle,128,4); 
+  OS_Launch(10*TIME_1MS); // doesn't return, interrupts enabled in here
+}
+
+extern tcbType* HeadPt;
+
+void printProcesses(void){
+	ST7735_FillRect(0, 0, 21*6, 16*10, ST7735_BLACK);
+	tcbType* tmp = HeadPt;
+	int ri = 0;
+	char str[24];
+	while(tmp!=NULL){
+		if(tmp->processPt==NULL){
+			ST7735_Message(0, ri++, "OS thread, Group:", 0);
+		}else{
+			sprintf(str, "Pid: %d, Group:", tmp->processPt->pid);
+			ST7735_Message(0, ri++, str, tmp->groupPt->id);
+		}
+		tmp = tmp->next;
+	}
+	ST7735_Message(0,ri++,"End",-1);
+	OS_Kill();
+}
+
+void idleProcess(void){
+	while(true){
+		for (int i = 0; i<10000; i++){}
+		OS_Sleep(100);
+	}
+}
+
+void SW1PushDemo2(void){
+	if(OS_MsTime() > 200){ // debounce
+    if(OS_AddThread(&printProcesses,128,1)){
+      NumCreated++;
+    }
+    OS_ClearMsTime();  // at least 20ms between touches
+  }
+}
+
+
+int32_t attack_pid = -1;
+void malware2(void){
+	int32_t* start = groupArray[1].heapAddress;
+	int32_t size = sizeof(pcbType)/sizeof(int32_t);
+	int32_t* end = start + HEAP_SIZE/2-1;
+	int16_t flag = 0;
+	while(start<end){
+		if(*start==size){
+			flag = 1;
+			*(start+1) = attack_pid;
+		}
+		start = start + abs(*start) + 2;
+	}
+	if(flag){
+		printf("Attack Done!\r\n");
+	}else{
+		printf("No process to attack.\r\n");
+	}
+	OS_Kill();
+}
+
+void demo2(void){
+	OS_Init();           // initialize, disable interrupts
+  PortD_Init();
+	PortF_Init();
+
+  // attach background tasks
+  OS_AddSW1Task(&SW1PushDemo2,2);
+  
+  // create initial foreground threads
+  NumCreated = 0;
+	
+	NumCreated += OS_AddThread(&Interpreter,128,3); 
+  NumCreated += OS_AddThread(&Idle,128,4); 
+  OS_Launch(10*TIME_1MS); // doesn't return, interrupts enabled in here
+}
 
 int main(void) { 			// main
-  Testmain2();
+  demo2();
+  return 0;               // this never executes	
 }

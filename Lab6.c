@@ -190,15 +190,40 @@ int Testmain0(void){   // Testmain0
   return 0;               // this never executes
 }
 
-int Testmain1(void) {
-	return 0;
+
+extern void OS_MPUConfigure(uint32_t threadId, uint32_t stackAddr);
+extern uint32_t* heapPtr;
+void Malloc1(void) {
+	OS_MPUConfigure(0, (uint32_t) (heapPtr));
+  Heap_Calloc(128);
+	OS_Kill();
 }
 
+void Malloc2(void) {
+	*(heapPtr + 1000) = 5;
+	OS_Kill();
+}
+
+int Testmain1(void) {
+  OS_Init();           // initialize, disable interrupts
+  PortD_Init();	
+
+  // create initial foreground threads
+  NumCreated = 0;
+  NumCreated += OS_AddThread(&Malloc1,128,1); 
+	NumCreated += OS_AddThread(&Malloc2,128,2); 
+	NumCreated += OS_AddThread(&Interpreter,128,3); 	
+  NumCreated += OS_AddThread(&Idle,128,4); 
+ 
+  OS_Launch(10*TIME_1MS); // doesn't return, interrupts enabled in here
+	return 0;
+}
+ 
 int Testmain2(void) {
 	return 0;
 }
 // --------------------------------------------------
 
 int main(void) { 			// main
-  Testmain0();
+  Testmain1();
 }

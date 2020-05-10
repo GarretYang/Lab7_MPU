@@ -29,6 +29,8 @@ uint32_t NumCreated;   // number of foreground threads created
 uint32_t IdleCount;    // CPU idle counter
 
 char Response[64];
+
+bool mpuEnable;
 //---------------------User debugging-----------------------
 extern int32_t MaxJitter;             // largest time jitter between interrupts in usec
 
@@ -272,6 +274,7 @@ void dummy2(void) {
 }
 
 int Testmain2(void) {
+	mpuEnable = TRUE;
 	OS_Init();           // initialize, disable interrupts
   PortD_Init();
 
@@ -293,5 +296,5 @@ int Testmain2(void) {
 // --------------------------------------------------
 
 int main(void) { 			// main
-  Testmain1();
+  Testmain2();
 }

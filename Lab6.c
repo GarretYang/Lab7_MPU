@@ -31,6 +31,7 @@ uint32_t IdleCount;    // CPU idle counter
 char Response[64];
 //---------------------User debugging-----------------------
 extern int32_t MaxJitter;             // largest time jitter between interrupts in usec
+extern uint16_t mpuEnable;
 
 void SW1Push1(void);
 void SW2Push2(void);
@@ -251,6 +252,7 @@ int Testmain1(void) {
 	OS_Init();           // initialize, disable interrupts
   PortD_Init();
 
+	mpuEnable = 1;
   // attach background tasks
   OS_AddSW1Task(&SW1Push1,2);  // PF4, SW1
   OS_AddSW2Task(&SW2Push2,2);  // PF0, SW2
@@ -462,7 +464,45 @@ void demo2(void){
   OS_Launch(10*TIME_1MS); // doesn't return, interrupts enabled in here
 }
 
+
+extern char cmdInput[CMD1SIZE];
+extern char cmdInput2[CMD2SIZE];
+void calculator(void) {
+  int value = atoi(cmdInput) + atoi(cmdInput2);
+	int group_id = OS_GetGroupId();
+  OS_SharedMem_Put(value);
+	OS_Kill();
+}
+
+void printer(void) {
+  int value = OS_SharedMem_Get();
+  printf("value: %d \r\n", value);
+	ST7735_Message(0,4,"result is ",value);		
+	OS_Kill();
+}
+
+void demo3(void) {
+  OS_Init();
+  PortD_Init();
+	PortF_Init();
+		
+	groupArray[1].id = 1;
+	groupArray[1].start = (int32_t)heapP;
+	groupArray[1].heapAddress = heapP;
+	groupArray[2].id = 2;
+	groupArray[2].start = (int32_t)(heapP + HEAP_SIZE/2);
+	groupArray[2].heapAddress = heapP + HEAP_SIZE/2;	
+	
+  // create initial foreground threads
+  NumCreated = 0;
+	OS_SharedMem_Init(1,1,2);
+	OS_AddProcess(&calculator,Heap_Group_Calloc(128,1),Heap_Group_Calloc(128,1),128,0, 1);
+	OS_AddProcess(&printer,Heap_Group_Calloc(128,2),Heap_Group_Calloc(128,2),128,1, 2);		
+  OS_AddThread(&Idle,128,4);
+	OS_Launch(10*TIME_1MS); // doesn't return, interrupts enabled in here
+}
+
 int main(void) { 			// main
   demo2();
-  return 0;               // this never executes	
+  return 0;   
 }

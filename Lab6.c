@@ -469,13 +469,15 @@ extern char cmdInput[CMD1SIZE];
 extern char cmdInput2[CMD2SIZE];
 void calculator(void) {
   int value = atoi(cmdInput) + atoi(cmdInput2);
+	memset(cmdInput, 0, CMD1SIZE);
+	memset(cmdInput2, 0, CMD2SIZE);	
 	int group_id = OS_GetGroupId();
-  OS_SharedMem_Put(value);
+  OS_SharedMem_Put(value);	
 	OS_Kill();
 }
 
 void printer(void) {
-  int value = OS_SharedMem_Get();
+  int value = OS_SharedMem_Get();    
   printf("value: %d \r\n", value);
 	ST7735_Message(0,4,"result is ",value);		
 	OS_Kill();
@@ -495,7 +497,6 @@ void demo3(void) {
 	
   // create initial foreground threads
   NumCreated = 0;
-	OS_SharedMem_Init(1,1,2);
 	OS_AddProcess(&calculator,Heap_Group_Calloc(128,1),Heap_Group_Calloc(128,1),128,0, 1);
 	OS_AddProcess(&printer,Heap_Group_Calloc(128,2),Heap_Group_Calloc(128,2),128,1, 2);		
   OS_AddThread(&Idle,128,4);

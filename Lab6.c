@@ -479,28 +479,8 @@ void calculator(void) {
 void printer(void) {
   int value = OS_SharedMem_Get();    
   printf("value: %d \r\n", value);
-	ST7735_Message(0,4,"result is ",value);		
+//	ST7735_Message(0,4,"result is ",value);		
 	OS_Kill();
-}
-
-void demo3(void) {
-  OS_Init();
-  PortD_Init();
-	PortF_Init();
-		
-	groupArray[1].id = 1;
-	groupArray[1].start = (int32_t)heapP;
-	groupArray[1].heapAddress = heapP;
-	groupArray[2].id = 2;
-	groupArray[2].start = (int32_t)(heapP + HEAP_SIZE/2);
-	groupArray[2].heapAddress = heapP + HEAP_SIZE/2;	
-	
-  // create initial foreground threads
-  NumCreated = 0;
-	OS_AddProcess(&calculator,Heap_Group_Calloc(128,1),Heap_Group_Calloc(128,1),128,0, 1);
-	OS_AddProcess(&printer,Heap_Group_Calloc(128,2),Heap_Group_Calloc(128,2),128,1, 2);		
-  OS_AddThread(&Idle,128,4);
-	OS_Launch(10*TIME_1MS); // doesn't return, interrupts enabled in here
 }
 
 int main(void) { 			// main
